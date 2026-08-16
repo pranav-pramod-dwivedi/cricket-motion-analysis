@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cricket Tracker — Dashboard</title>
+<style>
+  :root{ --bg:#0d1117; --card:#161b22; --line:#263041; --dim:#8b98a9; --ok:#7fe08a; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#e6edf3;
+       font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;padding:22px}
+  h1{font-size:16px;margin:0 0 4px;letter-spacing:.3px}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:18px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+       background:#f85149;margin-right:6px;vertical-align:1px}
+  .dot.live{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .v{font:700 26px/1.25 ui-monospace,Menlo,monospace;margin-top:5px}
+  .v small{font-size:13px;color:var(--dim);font-weight:500}
+  .bad{color:#f85149}.warn{color:#ffbe00}.good{color:var(--ok)}
+  .wide{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+  canvas{width:100%;height:210px;display:block;background:#0b0f16;border-radius:6px}
+  pre{margin:0;font:11px/1.6 ui-monospace,Menlo,monospace;color:#7ee787;
+      max-height:210px;overflow:auto;white-space:pre-wrap}
+  .hint{background:#161b22;border:1px dashed var(--line);border-radius:10px;
+        padding:16px;color:var(--dim);font-size:13px;line-height:1.7}
+  code{background:#0b0f16;padding:2px 6px;border-radius:4px;color:#79c0ff}
+</style>
+</head>
+<body>
+  <h1><span class="dot" id="dot"></span>Cricket Tracker — Dashboard</h1>
+  <div class="sub" id="status">Waiting for the phone to connect…</div>
+
+  <div id="waiting" class="hint">
+    Open <code id="url">https://…:8443</code> on your phone (same WiFi), tap
+    <b>Start camera</b>, and the live stats will appear here.
+  </div>
+
+  <div id="live" style="display:none">
+    <div class="grid">
+      <div class="card"><div class="k">Phone FPS</div><div class="v" id="fps">–</div></div>
+      <div class="card"><div class="k">Sharpness</div><div class="v" id="sharp">–</div></div>
+      <div class="card"><div class="k">Confidence</div><div class="v" id="conf">–</div></div>
+      <div class="card"><div class="k">Source</div><div class="v" id="src" style="font-size:17px">–</div></div>
+      <div class="card"><div class="k">Bat angle</div><div class="v" id="ang">–<small>°</small></div></div>
+      <div class="card"><div class="k">Tip speed</div><div class="v" id="spd">–<small> px/s</small></div></div>
+      <div class="card"><div class="k">Peak speed</div><div class="v" id="peak">–<small> px/s</small></div></div>
+      <div class="card"><div class="k">Tip position</div><div class="v" id="tip" style="font-size:17px">–</div></div>
+    </div>
+    <div class="wide">
+      <div class="card">
+        <div class="k" style="margin-bottom:8px">Live view
+          <span style="float:right;text-transform:none;letter-spacing:0"
+                id="mirrorHint">enable “Mirror PC” on the phone</span></div>
+        <img id="mirror" style="width:100%;border-radius:6px;display:none;background:#0b0f16">
+        <div id="mirrorOff" style="height:210px;display:flex;align-items:center;
+             justify-content:center;color:#8b98a9;font-size:12px;
+             background:#0b0f16;border-radius:6px">no live preview</div>
+      </div>
+      <div class="card"><div class="k" style="margin-bottom:8px">Tip speed history</div>
+        <canvas id="chart"></canvas></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="k" style="margin-bottom:10px">🏏 Swing replays
+        <span style="float:right;text-transform:none;letter-spacing:0"
+              id="clipHint">swing hard — clips arrive automatically</span></div>
+      <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:14px">
+        <div>
+          <img id="replay" style="width:100%;border-radius:6px;background:#0b0f16;
+               display:block;min-height:230px;object-fit:contain">
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <button id="play" style="padding:7px 14px;border:0;border-radius:6px;
+              background:#238636;color:#fff;font:600 12px system-ui">▶ Play</button>
+            <input id="scrub" type="range" min="0" max="0" value="0"
+                   style="flex:1;accent-color:#58a6ff">
+            <span id="fno" style="color:#8b98a9;font:11px ui-monospace,monospace">–</span>
+          </div>
+        </div>
+        <div>
+          <div id="cliplist" style="max-height:280px;overflow:auto;
+               display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="k" style="margin-bottom:8px">Live JSON</div>
+      <pre id="json">–</pre>
+    </div>
+  </div>
+
+<script>
+const $=id=>document.getElementById(id);
+$('url').textContent = location.origin.replace('127.0.0.1', location.hostname);
+
+let hist=[], lastSeen=0;
+// declared before the SSE handler below, which references them on the first
+// message (let/const are not hoisted — using them earlier throws)
+let clip=null, frameIdx=0, playing=false, playTimer=null;
+const knownClips=new Set();
+const es=new EventSource('/events');
+es.onmessage=e=>{
+  const d=JSON.parse(e.data);
+  lastSeen=Date.now();
+  $('waiting').style.display='none';
+  $('live').style.display='';
+  $('dot').className='dot live';
+  $('status').textContent='Connected — processing on phone, '+(d.w||'?')+'×'+(d.h||'?');
+
+  $('fps').textContent=(d.fps||0).toFixed(0);
+  $('fps').className='v '+((d.fps>=45)?'good':(d.fps>=25?'warn':'bad'));
+  $('sharp').textContent=(d.sharp||0).toFixed(0);
+  $('sharp').className='v '+((d.sharp>=150)?'good':(d.sharp>=100?'warn':'bad'));
+  $('conf').textContent=((d.conf||0)*100).toFixed(0)+'%';
+  $('conf').className='v '+((d.conf>=.7)?'good':(d.conf>=.5?'warn':'bad'));
+  $('src').textContent=d.source||'–';
+  $('src').className='v '+(d.source==='color'?'good':(d.predicted?'warn':''));
+  $('ang').innerHTML=(d.angle==null?'–':d.angle.toFixed(0))+'<small>°</small>';
+  $('spd').innerHTML=(d.speed||0)+'<small> px/s</small>';
+  $('peak').innerHTML=(d.peak||0)+'<small> px/s</small>';
+  $('tip').textContent=d.tip?('('+d.tip[0]+', '+d.tip[1]+')'):'–';
+  $('json').textContent=JSON.stringify(d,null,2);
+
+  if(d.newClip && !knownClips.has(d.newClip)){
+    knownClips.add(d.newClip);
+    refreshClips();
+    loadClip(d.newClip);          // auto-play the swing that just happened
+  }
+
+  hist.push(d.speed||0); if(hist.length>160) hist.shift();
+  draw();
+};
+es.onerror=()=>{ $('dot').className='dot'; $('status').textContent='Disconnected — retrying…'; };
+
+setInterval(()=>{ if(Date.now()-lastSeen>3000){ $('dot').className='dot';
+  $('status').textContent='Phone idle — no stats for 3s'; } },1000);
+
+// ---- live mirror (low-rate poll; only shows when the phone is sending) ----
+let mirrorFails=0;
+setInterval(()=>{
+  const img=$('mirror');
+  fetch('/frame?t='+Date.now()).then(r=>{
+    if(!r.ok) throw 0;
+    return r.blob();
+  }).then(b=>{
+    const u=URL.createObjectURL(b);
+    img.onload=()=>URL.revokeObjectURL(u);
+    img.src=u; img.style.display='block';
+    $('mirrorOff').style.display='none';
+    $('mirrorHint').textContent='live from phone';
+    mirrorFails=0;
+  }).catch(()=>{
+    if(++mirrorFails>3){
+      img.style.display='none'; $('mirrorOff').style.display='flex';
+      $('mirrorHint').textContent='enable “Mirror PC” on the phone';
+    }
+  });
+}, 140);
+
+// ---- swing replays --------------------------------------------------------
+function refreshClips(){
+  fetch('/clips').then(r=>r.json()).then(list=>{
+    const box=$('cliplist');
+    box.innerHTML='';
+    if(!list.length){ box.innerHTML='<div style="color:#8b98a9;font-size:12px">'+
+      'No swings yet. Swing the bat — clips send automatically.</div>'; return; }
+    $('clipHint').textContent=list.length+' saved';
+    list.forEach((c,i)=>{
+      const d=new Date(c.ts);
+      const b=document.createElement('button');
+      b.style.cssText='text-align:left;padding:9px 11px;border:1px solid #263041;'+
+        'border-radius:8px;background:#0b0f16;color:#e6edf3;font:12px system-ui;cursor:pointer';
+      b.innerHTML='<b>Swing '+(list.length-i)+'</b> &nbsp;'+
+        '<span style="color:#8b98a9">'+d.toLocaleTimeString()+'</span><br>'+
+        '<span style="color:#58a6ff;font:11px ui-monospace,monospace">peak '+
+        (c.peak||0)+' px/s'+(c.angle!=null?' · '+c.angle+'°':'')+' · '+c.frames+'f</span>';
+      b.onclick=()=>loadClip(c.id);
+      box.appendChild(b);
+    });
+    if(!clip && list.length) loadClip(list[0].id);
+  }).catch(()=>{});
+}
+
+function loadClip(id){
+  fetch('/clip/'+id).then(r=>r.json()).then(c=>{
+    clip=c; frameIdx=0;
+    $('scrub').max=Math.max(0,c.jpegs.length-1);
+    $('scrub').value=0;
+    showFrame(0);
+    play();
+  }).catch(()=>{});
+}
+
+function showFrame(i){
+  if(!clip||!clip.jpegs.length) return;
+  frameIdx=Math.max(0,Math.min(i,clip.jpegs.length-1));
+  $('replay').src=clip.jpegs[frameIdx];
+  $('scrub').value=frameIdx;
+  $('fno').textContent=(frameIdx+1)+'/'+clip.jpegs.length;
+}
+function play(){
+  if(!clip) return;
+  clearInterval(playTimer); playing=true; $('play').textContent='❚❚ Pause';
+  playTimer=setInterval(()=>{
+    if(frameIdx>=clip.jpegs.length-1) showFrame(0); else showFrame(frameIdx+1);
+  }, 90);
+}
+function pause(){ clearInterval(playTimer); playing=false; $('play').textContent='▶ Play'; }
+$('play').onclick=()=>playing?pause():play();
+$('scrub').oninput=e=>{ pause(); showFrame(+e.target.value); };
+
+refreshClips();
+setInterval(refreshClips, 4000);
+
+function draw(){
+  const c=$('chart'), dpr=devicePixelRatio||1;
+  const w=c.clientWidth, h=c.clientHeight;
+  if(c.width!==w*dpr){ c.width=w*dpr; c.height=h*dpr; }
+  const x=c.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,w,h);
+  const mx=Math.max(100,...hist);
+  x.strokeStyle='#263041'; x.lineWidth=1;
+  for(let i=0;i<=3;i++){ const y=h-h*i/3; x.beginPath(); x.moveTo(0,y); x.lineTo(w,y); x.stroke(); }
+  if(hist.length<2) return;
+  x.beginPath();
+  hist.forEach((v,i)=>{ const px=i/(hist.length-1)*w, py=h-(v/mx)*(h-10)-5;
+    i?x.lineTo(px,py):x.moveTo(px,py); });
+  x.strokeStyle='#58a6ff'; x.lineWidth=2; x.stroke();
+  x.lineTo(w,h); x.lineTo(0,h); x.closePath();
+  x.fillStyle='rgba(88,166,255,.12)'; x.fill();
+  x.fillStyle='#8b98a9'; x.font='10px ui-monospace,monospace';
+  x.fillText(mx.toFixed(0)+' px/s', 6, 12);
+}
+addEventListener('resize',draw);
+</script>
+</body>
+</html>

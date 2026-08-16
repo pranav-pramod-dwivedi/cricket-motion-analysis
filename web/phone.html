@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Cricket Tracker — Camera</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#eee;
+               font-family: -apple-system, system-ui, Roboto, sans-serif;
+               overflow:hidden; overscroll-behavior:none; }
+  #stage { position:relative; width:100vw; height:100vh; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  video { visibility:hidden; }
+  #hud { position:absolute; top:0; left:0; right:0;
+         padding:calc(8px + env(safe-area-inset-top)) 12px 10px;
+         font:600 12px/1.5 ui-monospace, Menlo, monospace;
+         background:linear-gradient(#000c, #0000); pointer-events:none;
+         transition:font-size .15s; }
+  #hud b { color:#7fe08a; font-weight:700; }
+  /* BIG mode: readable from across the room */
+  body.big #hud { font-size:23px; line-height:1.45; }
+  body.big #swing { font-size:26px; font-weight:800; }
+  body.big #panel { display:none; }
+  body.big #exitbig { display:block; }
+  #exitbig { display:none; position:absolute; right:12px;
+             bottom:calc(16px + env(safe-area-inset-bottom));
+             padding:16px 22px; border-radius:12px; border:1px solid #3a4655;
+             background:#000b; color:#eee; font:700 16px system-ui; z-index:6; }
+  /* huge centered status so you can read it while batting */
+  #bigstat { display:none; position:absolute; left:0; right:0; bottom:22%;
+             text-align:center; font:800 62px/1 ui-monospace, monospace;
+             text-shadow:0 3px 18px #000; pointer-events:none; }
+  body.big #bigstat { display:block; }
+  #bigstat small { display:block; font:600 17px system-ui; color:#9ab; margin-top:8px }
+  /* live mask preview — shows exactly what the detector sees */
+  #pip { display:none; position:absolute; right:8px;
+         top:calc(64px + env(safe-area-inset-top));
+         width:33vw; max-width:190px; border:2px solid #7aa2f7; border-radius:8px;
+         background:#000; z-index:4; }
+  body.pip #pip { display:block; }
+  .bad { color:#ff6b6b !important; }
+  .warnrow { color:#ffb347; }
+  /* Bottom panel: respects the phone's home-indicator safe area, scrolls if
+     it runs out of room, and can collapse to give the camera the full screen. */
+  #panel { position:absolute; left:0; right:0; bottom:0;
+           padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+           background:linear-gradient(#0000, #000d 22%);
+           max-height:58vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #panel.collapsed .sliders { display:none; }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:7px; }
+  .row label { width:16px; flex:none; font:700 12px ui-monospace, monospace; color:#9ab; }
+  input[type=range] { flex:1; min-width:0; accent-color:#7aa2f7; height:24px; }
+  .val { width:32px; flex:none; text-align:right;
+         font:600 11px ui-monospace, monospace; color:#9ab; }
+  /* buttons wrap instead of overflowing off-screen */
+  .btns { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:0; }
+  button { flex:1 1 calc(50% - 4px); min-width:0; padding:13px 8px; border:0;
+           border-radius:10px; background:#1f2733; color:#eee;
+           font:600 13px system-ui; white-space:nowrap; }
+  button.on { background:#2f6f4f; }
+  button.primary { background:#3b6ea5; }
+  #toggle { position:absolute; right:12px; top:-38px; width:auto; flex:none;
+            padding:8px 14px; background:#000a; border:1px solid #2a3444;
+            font-size:12px; border-radius:8px; }
+  #start { position:absolute; inset:0; display:flex; flex-direction:column;
+           align-items:center; justify-content:center; gap:14px; background:#000;
+           text-align:center; padding:24px; z-index:5; }
+  #start h1 { font-size:19px; margin:0; }
+  #start p { color:#9ab; font-size:13px; line-height:1.6; margin:0; max-width:300px; }
+  #start button { max-width:240px; flex:none; padding:15px 28px; font-size:15px; }
+  #err { color:#ff6b6b; font-size:12px; max-width:300px; }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="cam" playsinline autoplay muted></video>
+  <canvas id="view"></canvas>
+
+  <div id="hud">
+    FPS <b id="fps">–</b> &nbsp; SHARP <b id="sharp">–</b> &nbsp;
+    CONF <b id="conf">–</b> &nbsp; <span id="src">–</span>
+    <div id="warn" class="warnrow"></div>
+    <div id="swing" style="color:#ff6b6b"></div>
+  </div>
+
+  <canvas id="pip"></canvas>
+  <div id="bigstat">–<small>tip speed px/s</small></div>
+  <button id="exitbig">✕ Exit big view</button>
+
+  <div id="panel">
+    <button id="toggle">Hide ▾</button>
+    <div class="sliders">
+      <div class="row"><label>H</label><input type="range" id="h0" min="0" max="179" value="95">
+        <span class="val" id="h0v">95</span>
+        <input type="range" id="h1" min="0" max="179" value="135"><span class="val" id="h1v">135</span></div>
+      <div class="row"><label>S</label><input type="range" id="s0" min="0" max="255" value="50">
+        <span class="val" id="s0v">50</span>
+        <input type="range" id="s1" min="0" max="255" value="255"><span class="val" id="s1v">255</span></div>
+      <div class="row"><label>V</label><input type="range" id="v0" min="0" max="255" value="40">
+        <span class="val" id="v0v">40</span>
+        <input type="range" id="v1" min="0" max="255" value="255"><span class="val" id="v1v">255</span></div>
+    </div>
+    <div class="btns">
+      <button id="learn" style="flex:1 1 100%;background:#8a5a00">🎯 Tap to learn bat colour</button>
+      <button id="selfie" class="primary">🤳 Front camera</button>
+      <button id="rear">📷 Rear camera</button>
+      <button id="mask">Mask</button>
+      <button id="skel" class="on">🦴 Skeleton</button>
+      <button id="pipbtn" class="on">🔍 Preview</button>
+      <button id="big" style="flex:1 1 100%;background:#2b4a6f">⛶ Big view (fullscreen)</button>
+      <button id="mirror">🖥 Mirror PC: off</button>
+      <button id="auto" class="on">🏏 Auto-clip: on</button>
+    </div>
+  </div>
+
+  <div id="start">
+    <h1>🏏 Cricket Tracker</h1>
+    <p>Runs entirely on this phone — no video is sent over WiFi, so there's no lag. Stats stream to your PC.</p>
+    <button id="go" class="primary">Start camera</button>
+    <div id="err"></div>
+  </div>
+</div>
+
+<script type="module">
+// ---- MediaPipe pose (vendored locally; no internet needed) ---------
+import { FilesetResolver, PoseLandmarker }
+  from './vendor/vision_bundle.mjs';
+import { VirtualBat, skeletonAnchor, CAL_FRAMES } from './virtualbat.js';
+
+let landmarker=null, poseReady=false, poseEvery=2, poseTick=0, lastLms=null;
+const vbat=new VirtualBat();
+
+(async ()=>{
+  try{
+    const fs=await FilesetResolver.forVisionTasks('./vendor');
+    landmarker=await PoseLandmarker.createFromOptions(fs,{
+      baseOptions:{ modelAssetPath:'./vendor/pose_landmarker_lite.task',
+                    delegate:'GPU' },
+      runningMode:'VIDEO', numPoses:1,
+      minPoseDetectionConfidence:0.4, minTrackingConfidence:0.4,
+    });
+    poseReady=true;
+    el('warn').textContent='';
+  }catch(e){
+    console.warn('pose failed',e);
+    el('warn').textContent='skeleton unavailable ('+e.message+')';
+  }
+})();
+
+// SKELETON bone pairs (MediaPipe 33-point indices)
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],
+             [23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[0,11],[0,12]];
+
+// ===================================================================
+// Bat tracking, in-browser. Mirrors engine/bat_module.py:
+//   contour-free blob analysis via PCA -> elongated object
+//   + Kalman prediction + velocity-aware gating + skeleton-less recovery
+// Processing runs on a downscaled buffer for speed; drawing is full-res.
+// ===================================================================
+const PROC_W = 240;              // detection resolution (small = fast)
+const MIN_AREA_FRAC = 0.0016;    // fraction of processed frame
+const MIN_ASPECT = 2.6;
+const BASE_JUMP = 0.22;          // as fraction of frame diagonal
+const JUMP_VEL = 1.8;
+const COAST_FRAMES = 8;
+const MIN_CONF = 0.5;
+
+const el = id => document.getElementById(id);
+const video = el('cam'), view = el('view'), ctx = view.getContext('2d', {alpha:false});
+const proc = document.createElement('canvas');
+const pctx = proc.getContext('2d', {willReadFrequently:true});
+
+let range = {h:[95,135], s:[50,255], v:[40,255]};
+// default to the front camera so you can see yourself while swinging
+let showMask = false, facing = 'user', stream = null, showSkel = true, pipOn = true;
+let pickMode = false, pickPt = null;
+
+// ---- tiny Kalman (constant velocity, 2D) --------------------------
+function KF(){ this.x=null; this.v=[0,0]; this.p=1; }
+KF.prototype.predict = function(){
+  if(!this.x) return null;
+  return [this.x[0]+this.v[0], this.x[1]+this.v[1]];
+};
+KF.prototype.correct = function(z){
+  if(!this.x){ this.x=[z[0],z[1]]; this.v=[0,0]; return this.x.slice(); }
+  const pr=this.predict(), k=0.55;
+  const nx=[pr[0]+(z[0]-pr[0])*k, pr[1]+(z[1]-pr[1])*k];
+  // velocity from smoothed displacement
+  this.v=[0.6*this.v[0]+0.4*(nx[0]-this.x[0]), 0.6*this.v[1]+0.4*(nx[1]-this.x[1])];
+  this.x=nx; return nx.slice();
+};
+KF.prototype.reset=function(){ this.x=null; this.v=[0,0]; };
+
+const tipKF=new KF(), baseKF=new KF();
+let misses=0, lastTip=null, lastBase=null, peak=0, lastT=0, speed=0;
+let frames=0, fpsT=performance.now(), fps=0, sharp=0;
+
+// ---- rgb -> hsv match (OpenCV convention: H 0-179) -----------------
+function inRange(r,g,b){
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  const v=mx; if(v<range.v[0]||v>range.v[1]) return false;
+  const s=mx===0?0:255*d/mx; if(s<range.s[0]||s>range.s[1]) return false;
+  let h=0;
+  if(d!==0){
+    if(mx===r) h=43*(((g-b)/d)%6);
+    else if(mx===g) h=43*(((b-r)/d)+2);
+    else h=43*(((r-g)/d)+4);
+  }
+  if(h<0) h+=180;
+  return h>=range.h[0] && h<=range.h[1];
+}
+
+// ---- detect the bat -----------------------------------------------
+// CRITICAL: analyse each connected BLOB separately (like OpenCV's
+// findContours on the Mac). Running PCA over every blue pixel at once merges
+// unrelated objects — a blue cushion across the room plus the broom becomes
+// one imaginary "bat" spanning the gap. That was the random-bat bug.
+const lbl = { buf:null, stack:null };
+const diag = { px:0, blobs:0, rejArea:0, rejAspect:0, rejFill:0, rejLen:0,
+               bestAspect:0, bestArea:0 };
+
+function detect(w,h){
+  const img=pctx.getImageData(0,0,w,h), d=img.data;
+  const N=w*h;
+  if(!lbl.buf || lbl.buf.length!==N){
+    lbl.buf=new Int32Array(N); lbl.stack=new Int32Array(N);
+  }
+  const lab=lbl.buf, stack=lbl.stack;
+  lab.fill(0);
+
+  // binary mask
+  const on=new Uint8Array(N);
+  for(let p=0,i=0;p<N;p++,i+=4) on[p]=inRange(d[i],d[i+1],d[i+2])?1:0;
+
+  if(showMask){
+    for(let p=0,i=0;p<N;p++,i+=4){ const v=on[p]?255:0; d[i]=d[i+1]=d[i+2]=v; }
+    pctx.putImageData(img,0,0);
+  }
+
+  const minArea=MIN_AREA_FRAC*N;
+  let best=null, cur=0;
+  // why-it-failed counters, surfaced in the HUD so tuning isn't guesswork
+  diag.px=0; for(let p=0;p<N;p++) if(on[p]) diag.px++;
+  diag.blobs=0; diag.rejArea=0; diag.rejAspect=0; diag.rejFill=0; diag.rejLen=0;
+  diag.bestAspect=0; diag.bestArea=0;
+
+  // iterative flood fill (8-connected); recursion would blow the stack
+  for(let seed=0;seed<N;seed++){
+    if(!on[seed] || lab[seed]) continue;
+    cur++;
+    let sp=0; stack[sp++]=seed; lab[seed]=cur;
+    let n=0,sx=0,sy=0,sxx=0,syy=0,sxy=0;
+    let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+    while(sp>0){
+      const p=stack[--sp];
+      const x=p%w, y=(p-x)/w;
+      n++; sx+=x; sy+=y; sxx+=x*x; syy+=y*y; sxy+=x*y;
+      if(x<minx)minx=x; if(x>maxx)maxx=x;
+      if(y<miny)miny=y; if(y>maxy)maxy=y;
+      for(let dy=-1;dy<=1;dy++){
+        const ny=y+dy; if(ny<0||ny>=h) continue;
+        for(let dx=-1;dx<=1;dx++){
+          const nx=x+dx; if(nx<0||nx>=w) continue;
+          const q=ny*w+nx;
+          if(on[q] && !lab[q]){ lab[q]=cur; stack[sp++]=q; }
+        }
+      }
+    }
+    diag.blobs++;
+    if(n>diag.bestArea) diag.bestArea=n;
+    if(n<minArea){ diag.rejArea++; continue; }
+
+    // PCA on THIS blob only
+    const cx=sx/n, cy=sy/n;
+    const vxx=sxx/n-cx*cx, vyy=syy/n-cy*cy, vxy=sxy/n-cx*cy;
+    const tr=vxx+vyy, det=vxx*vyy-vxy*vxy;
+    const disc=Math.sqrt(Math.max(tr*tr/4-det,0));
+    const l1=tr/2+disc, l2=tr/2-disc;
+    if(l1<=1e-6) continue;
+    const aspect=Math.sqrt(l1/Math.max(l2,1e-6));
+    if(aspect>diag.bestAspect) diag.bestAspect=aspect;
+    if(aspect<MIN_ASPECT){ diag.rejAspect++; continue; }
+
+    // fill ratio: reject sprawling/blobby regions (mirrors MIN_EXTENT)
+    const bw=maxx-minx+1, bh=maxy-miny+1;
+    if(n/(bw*bh) < 0.14){ diag.rejFill++; continue; }
+
+    let ax,ay;
+    if(Math.abs(vxy)>1e-6){ ax=l1-vyy; ay=vxy; }
+    else { ax=(vxx>=vyy)?1:0; ay=(vxx>=vyy)?0:1; }
+    const m=Math.hypot(ax,ay)||1; ax/=m; ay/=m;
+
+    // extent along the principal axis -> the two ends
+    let lo=1e9, hi=-1e9;
+    for(let y=miny;y<=maxy;y++){
+      for(let x=minx;x<=maxx;x++){
+        if(lab[y*w+x]!==cur) continue;
+        const t=(x-cx)*ax+(y-cy)*ay;
+        if(t<lo)lo=t; if(t>hi)hi=t;
+      }
+    }
+    const len=hi-lo;
+    if(len < 0.16*Math.max(w,h)){ diag.rejLen++; continue; }
+
+    const score=0.5*Math.min(aspect/7,1)+0.3*Math.min(n/(minArea*5),1)+0.2*Math.min(len/(0.5*w),1);
+    if(!best || score>best.score){
+      best={ p1:[cx+ax*lo,cy+ay*lo], p2:[cx+ax*hi,cy+ay*hi],
+             score, len, area:n, aspect,
+             conf: Math.min(1, 0.35+0.45*Math.min(aspect/7,1)+0.2*Math.min(n/(minArea*5),1)) };
+    }
+  }
+  return best;
+}
+
+// pick which end is the tip: farther from the tap point (grip), else keep
+// temporal continuity, else the lower end.
+function orient(p1,p2){
+  if(pickPt){
+    const d1=Math.hypot(p1[0]-pickPt[0],p1[1]-pickPt[1]);
+    const d2=Math.hypot(p2[0]-pickPt[0],p2[1]-pickPt[1]);
+    return d1<d2?[p1,p2]:[p2,p1];
+  }
+  if(lastTip){
+    const d1=Math.hypot(p1[0]-lastTip[0],p1[1]-lastTip[1]);
+    const d2=Math.hypot(p2[0]-lastTip[0],p2[1]-lastTip[1]);
+    return d1<d2?[p2,p1]:[p1,p2];
+  }
+  return p1[1]<p2[1]?[p1,p2]:[p2,p1];
+}
+
+let trail=[];
+function loop(){
+  if(!stream){ requestAnimationFrame(loop); return; }
+  const vw=video.videoWidth, vh=video.videoHeight;
+  if(!vw){ requestAnimationFrame(loop); return; }
+
+  const pw=PROC_W, ph=Math.round(PROC_W*vh/vw);
+  if(proc.width!==pw){ proc.width=pw; proc.height=ph; }
+  pctx.drawImage(video,0,0,pw,ph);
+
+  // ---- pose (every Nth frame — it's the expensive stage) ----------
+  if(poseReady && showSkel && (++poseTick % poseEvery===0)){
+    try{
+      const res=landmarker.detectForVideo(video, performance.now());
+      lastLms = (res && res.landmarks && res.landmarks.length) ? res.landmarks[0] : null;
+    }catch(e){ /* transient; keep the previous skeleton */ }
+  }
+
+  const diag=Math.hypot(pw,ph);
+  const predTip=tipKF.predict(), predBase=baseKF.predict();
+  let r=detect(pw,ph), source='none', conf=0, tip=null, base=null, predicted=false;
+
+  if(r){
+    let [b,t]=orient(r.p1,r.p2);
+    conf=r.conf;
+    const ref=predTip||lastTip;
+    if(ref){
+      const sp=Math.hypot(tipKF.v[0],tipKF.v[1]);
+      let budget=(BASE_JUMP*diag + sp*JUMP_VEL)*(1+0.8*misses);
+      const jump=Math.hypot(t[0]-ref[0],t[1]-ref[1]);
+      if(jump>budget) r=null; else conf*=Math.max(0.4,1-jump/budget);
+    }
+    if(r && conf>=MIN_CONF){
+      if(misses>0){ tipKF.reset(); baseKF.reset(); }
+      misses=0; source='color';
+      tip=tipKF.correct(t); base=baseKF.correct(b);
+      lastTip=tip; lastBase=base; predicted=false;
+    } else r=null;
+  }
+
+  if(!r){
+    misses++;
+    if(misses<=COAST_FRAMES && predTip && predBase){
+      tip=predTip; base=predBase; predicted=true; source='predicted';
+      conf=Math.max(0.25,0.8-0.1*misses);
+      lastTip=tip; lastBase=base;
+    } else if(misses>COAST_FRAMES){
+      tipKF.reset(); baseKF.reset(); lastTip=lastBase=null; trail.length=0;
+      conf=0; source='none';
+    }
+  }
+
+  // ---- kinematics -------------------------------------------------
+  const now=performance.now();
+  if(tip && lastT){
+    const dt=Math.max((now-lastT)/1000,0.001);
+    const sc=vw/pw;
+    if(trail.length) {
+      const prev=trail[trail.length-1];
+      speed=Math.hypot(tip[0]-prev[0],tip[1]-prev[1])*sc/dt;
+      if(speed>peak) peak=speed;
+    }
+  }
+  lastT=now;
+  if(tip){ trail.push([tip[0],tip[1]]); if(trail.length>36) trail.shift(); }
+
+  // ---- draw (full resolution) -------------------------------------
+  if(view.width!==vw){ view.width=vw; view.height=vh; }
+  // Front camera: mirror the canvas so you see yourself as in a mirror.
+  // Detection still runs on the unmirrored buffer, so coordinates are
+  // unaffected — only the presentation is flipped.
+  ctx.setTransform(1,0,0,1,0,0);
+  if(facing==='user'){ ctx.translate(vw,0); ctx.scale(-1,1); }
+  if(showMask){
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(proc,0,0,vw,vh);
+  } else {
+    ctx.drawImage(video,0,0,vw,vh);
+  }
+  // ---- skeleton overlay -------------------------------------------
+  if(showSkel && lastLms){
+    const P=i=>[lastLms[i].x*vw, lastLms[i].y*vh];
+    ctx.strokeStyle='rgba(0,255,180,.9)'; ctx.lineWidth=Math.max(2,vw*0.004);
+    ctx.beginPath();
+    for(const [a,b] of BONES){
+      if(!lastLms[a]||!lastLms[b]) continue;
+      if((lastLms[a].visibility??1)<0.3||(lastLms[b].visibility??1)<0.3) continue;
+      const pa=P(a), pb=P(b);
+      ctx.moveTo(pa[0],pa[1]); ctx.lineTo(pb[0],pb[1]);
+    }
+    ctx.stroke();
+    ctx.fillStyle='#00c8ff';
+    for(let i=0;i<lastLms.length;i++){
+      if((lastLms[i].visibility??1)<0.3) continue;
+      const p=P(i);
+      ctx.beginPath(); ctx.arc(p[0],p[1],Math.max(2.5,vw*0.005),0,7); ctx.fill();
+    }
+  }
+
+  const sc=vw/pw;
+  if(tip && base){
+    const B=[base[0]*sc,base[1]*sc], T=[tip[0]*sc,tip[1]*sc];
+    const dx=T[0]-B[0], dy=T[1]-B[1], n=Math.hypot(dx,dy)||1;
+    const E=[T[0]+dx/n*0.06*vw, T[1]+dy/n*0.06*vw];
+    ctx.lineCap='round';
+    // swing arc
+    if(trail.length>1){
+      ctx.strokeStyle='rgba(255,150,0,.75)'; ctx.lineWidth=Math.max(3,vw*0.005);
+      ctx.beginPath(); ctx.moveTo(trail[0][0]*sc,trail[0][1]*sc);
+      for(const p of trail) ctx.lineTo(p[0]*sc,p[1]*sc);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = predicted ? '#ffbe00' : '#ff2b2b';
+    ctx.lineWidth=Math.max(5,vw*0.011);
+    ctx.beginPath(); ctx.moveTo(B[0],B[1]); ctx.lineTo(E[0],E[1]); ctx.stroke();
+    ctx.fillStyle='#3b82f6'; ctx.beginPath(); ctx.arc(B[0],B[1],vw*0.012,0,7); ctx.fill();
+    ctx.fillStyle='#eab308'; ctx.beginPath(); ctx.arc(T[0],T[1],vw*0.012,0,7); ctx.fill();
+  }
+  if(pickPt){
+    ctx.strokeStyle='#7fe08a'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(pickPt[0]*sc,pickPt[1]*sc,vw*0.03,0,7); ctx.stroke();
+  }
+
+  // ---- fps + sharpness --------------------------------------------
+  frames++;
+  if(now-fpsT>=500){
+    fps=frames*1000/(now-fpsT); frames=0; fpsT=now;
+    sharp=sharpness(pw,ph);
+    el('fps').textContent=fps.toFixed(0);
+    const se=el('sharp'); se.textContent=sharp.toFixed(0);
+    se.className = sharp<100?'bad':'';
+    el('conf').textContent=(conf*100).toFixed(0)+'%';
+    el('src').textContent=source;
+    // Tell the user WHY there's no bat, instead of silently showing nothing.
+    let why='';
+    if(source==='none'){
+      const pct=(diag.px/(proc.width*proc.height)*100);
+      if(diag.px<40) why='✗ no blue pixels — tap 🎯 learn on the bat';
+      else if(pct>45) why='✗ '+pct.toFixed(0)+'% of screen matches — range too wide';
+      else if(diag.blobs===0) why='✗ no blobs';
+      else if(diag.rejArea===diag.blobs) why='✗ blob too small (biggest '+diag.bestArea+'px)';
+      else if(diag.rejAspect) why='✗ not long enough (aspect '+diag.bestAspect.toFixed(1)+', need 2.6)';
+      else if(diag.rejFill) why='✗ shape too scattered';
+      else if(diag.rejLen) why='✗ too short — move closer';
+      else why='✗ no match ('+diag.blobs+' blobs)';
+    }
+    el('warn').textContent = why || (sharp<100 ? '⚠ blurry — more light / clean lens' : '');
+    el('bigstat').innerHTML = (source==='none'? '—' : Math.round(speed)) +
+      '<small>'+(source==='none' ? (why||'searching') : source+' · '+(conf*100).toFixed(0)+'%')+'</small>';
+    push({fps, sharp, conf, source, predicted,
+          tip: tip?[Math.round(tip[0]*sc),Math.round(tip[1]*sc)]:null,
+          base: base?[Math.round(base[0]*sc),Math.round(base[1]*sc)]:null,
+          angle: (tip&&base)?+(Math.atan2(-(tip[1]-base[1]),tip[0]-base[0])*180/Math.PI).toFixed(1):null,
+          speed:+speed.toFixed(0), peak:+peak.toFixed(0),
+          w:vw, h:vh,
+          diag:{...diag, why, pct:+(diag.px/(proc.width*proc.height)*100).toFixed(1),
+                range:JSON.parse(JSON.stringify(range))}});
+  }
+  // live mask preview (always the mask, regardless of main-view mode)
+  if(pipOn){
+    const pc=el('pip'), pcx=pc.getContext('2d');
+    if(pc.width!==pw){ pc.width=pw; pc.height=ph; }
+    // detect() may have binarized the buffer when Mask is on — redraw the
+    // clean frame so we classify real pixels, not an already-thresholded one.
+    if(showMask) pctx.drawImage(video,0,0,pw,ph);
+    const im=pctx.getImageData(0,0,pw,ph), dd=im.data;
+    for(let p=0,i=0;p<pw*ph;p++,i+=4){
+      const onp=inRange(dd[i],dd[i+1],dd[i+2]);
+      dd[i]=onp?90:12; dd[i+1]=onp?190:12; dd[i+2]=onp?255:12;
+    }
+    pcx.putImageData(im,0,0);
+    if(tip&&base){
+      pcx.strokeStyle='#ff2b2b'; pcx.lineWidth=2;
+      pcx.beginPath(); pcx.moveTo(base[0],base[1]); pcx.lineTo(tip[0],tip[1]); pcx.stroke();
+    }
+  }
+
+  updateSwing(speed, (tip&&base)
+    ? +(Math.atan2(-(tip[1]-base[1]),tip[0]-base[0])*180/Math.PI).toFixed(1) : null);
+  sendMirror(now);
+  requestAnimationFrame(loop);
+}
+
+// laplacian-ish variance on a coarse grid -> blur metric
+function sharpness(w,h){
+  const img=pctx.getImageData(0,0,w,h).data;
+  let sum=0,sq=0,n=0;
+  for(let y=1;y<h-1;y+=2) for(let x=1;x<w-1;x+=2){
+    const i=(y*w+x)*4;
+    const g=img[i]*0.3+img[i+1]*0.59+img[i+2]*0.11;
+    const gl=(img[i-4]*0.3+img[i-3]*0.59+img[i-2]*0.11);
+    const gr=(img[i+4]*0.3+img[i+5]*0.59+img[i+6]*0.11);
+    const gu=(img[i-w*4]*0.3+img[i-w*4+1]*0.59+img[i-w*4+2]*0.11);
+    const gd=(img[i+w*4]*0.3+img[i+w*4+1]*0.59+img[i+w*4+2]*0.11);
+    const lap=4*g-gl-gr-gu-gd;
+    sum+=lap; sq+=lap*lap; n++;
+  }
+  if(!n) return 0;
+  const mean=sum/n;
+  return sq/n-mean*mean;
+}
+
+// ---- push stats to the PC (fire and forget, never blocks a frame) --
+let sending=false;
+function push(obj){
+  if(sending) return;
+  sending=true;
+  fetch('/stats',{method:'POST',body:JSON.stringify(obj),
+                  headers:{'Content-Type':'application/json'},keepalive:true})
+    .catch(()=>{}).finally(()=>{sending=false;});
+}
+
+// ---- optional low-rate mirror to the PC ---------------------------
+// Deliberately throttled and small: this is for framing yourself, NOT for
+// tracking. Tracking stays on-device at full rate, so the preview lagging
+// costs nothing. Sending full-rate video is exactly what caused the original
+// latency problem, so we cap it hard.
+let mirrorOn=false, mirrorBusy=false, lastMirror=0;
+const MIRROR_FPS=8, MIRROR_W=480;
+const mcv=document.createElement('canvas'), mctx=mcv.getContext('2d');
+
+// ---- swing capture -------------------------------------------------
+// A rolling buffer of recent overlay frames. When a swing is detected we ship
+// the window around it (pre-roll + follow-through) to the PC. Between swings
+// nothing is sent, so the network stays idle and latency stays low.
+const CLIP_W=420, CLIP_PRE=14, CLIP_POST=12, CLIP_Q=0.45;
+const SWING_START=900;      // px/s tip speed that counts as a swing
+const SWING_END=260;        // drop below this and the swing is over
+let ring=[], swinging=false, swingPeak=0, postCount=0, swingAngle=null;
+let capBusy=false, autoClip=true;
+const ccv=document.createElement('canvas'), cctx=ccv.getContext('2d');
+
+function grabClipFrame(){
+  const vw=view.width, vh=view.height;
+  if(!vw) return;
+  const w=CLIP_W, h=Math.round(CLIP_W*vh/vw);
+  if(ccv.width!==w){ ccv.width=w; ccv.height=h; }
+  cctx.drawImage(view,0,0,w,h);
+  ring.push(ccv.toDataURL('image/jpeg',CLIP_Q));
+  if(ring.length>CLIP_PRE+CLIP_POST+6) ring.shift();
+}
+
+function updateSwing(spd, angle){
+  if(!autoClip) return;
+  grabClipFrame();
+  if(!swinging){
+    if(spd>=SWING_START){
+      swinging=true; swingPeak=spd; postCount=0; swingAngle=angle;
+      el('swing').textContent='● recording swing';
+    }
+  } else {
+    if(spd>swingPeak){ swingPeak=spd; swingAngle=angle; }
+    if(spd<SWING_END){
+      postCount++;
+      if(postCount>=CLIP_POST){ swinging=false; sendClip(); }
+    } else postCount=0;
+  }
+}
+
+function sendClip(){
+  if(capBusy){ el('swing').textContent=''; return; }
+  const jpegs=ring.slice(-(CLIP_PRE+CLIP_POST));
+  if(jpegs.length<4){ el('swing').textContent=''; return; }
+  capBusy=true;
+  el('swing').textContent='↑ sending swing…';
+  fetch('/clip',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ts:Date.now(), peak:Math.round(swingPeak),
+                         angle:swingAngle, jpegs})})
+    .then(()=>{ el('swing').textContent='✓ swing sent to PC';
+                setTimeout(()=>{el('swing').textContent='';},2000); })
+    .catch(()=>{ el('swing').textContent='✗ send failed'; })
+    .finally(()=>{ capBusy=false; });
+}
+
+function sendMirror(now){
+  if(!mirrorOn || mirrorBusy) return;
+  if(now-lastMirror < 1000/MIRROR_FPS) return;
+  lastMirror=now; mirrorBusy=true;
+  const vw=view.width, vh=view.height;
+  if(!vw){ mirrorBusy=false; return; }
+  const w=MIRROR_W, h=Math.round(MIRROR_W*vh/vw);
+  if(mcv.width!==w){ mcv.width=w; mcv.height=h; }
+  mctx.drawImage(view,0,0,w,h);   // the overlay canvas, so the PC sees the bat line
+  mcv.toBlob(b=>{
+    if(!b){ mirrorBusy=false; return; }
+    fetch('/frame',{method:'POST',body:b,
+      headers:{'Content-Type':'image/jpeg'}}).catch(()=>{})
+      .finally(()=>{mirrorBusy=false;});
+  },'image/jpeg',0.5);
+}
+
+// ---- camera -------------------------------------------------------
+async function start(){
+  el('err').textContent='';
+  try{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{ facingMode:{ideal:facing},
+              width:{ideal:1280}, height:{ideal:720},
+              frameRate:{ideal:60, min:30} }
+    });
+    video.srcObject=stream;
+    await video.play();
+    el('start').classList.add('hide');
+    const s=stream.getVideoTracks()[0].getSettings();
+    console.log('camera', s.width+'x'+s.height, s.frameRate+'fps');
+  }catch(e){
+    el('err').textContent='Camera failed: '+e.message+
+      (location.protocol!=='https:' ? ' — must be opened over https://' : '');
+  }
+}
+
+el('go').onclick=start;
+el('mask').onclick=e=>{ showMask=!showMask; e.target.classList.toggle('on',showMask); };
+el('skel').onclick=e=>{ showSkel=!showSkel; e.target.classList.toggle('on',showSkel);
+  if(!showSkel) lastLms=null; };
+
+function setFacing(f){
+  if(facing===f && stream) return;
+  facing=f; markCam(); start();
+}
+function markCam(){
+  el('selfie').classList.toggle('on', facing==='user');
+  el('rear').classList.toggle('on', facing==='environment');
+}
+el('selfie').onclick=()=>setFacing('user');
+el('rear').onclick=()=>setFacing('environment');
+
+el('pipbtn').onclick=e=>{
+  pipOn=!pipOn; e.target.classList.toggle('on',pipOn);
+  document.body.classList.toggle('pip',pipOn);
+};
+document.body.classList.add('pip');
+
+// ---- big / fullscreen view ----------------------------------------
+async function enterBig(){
+  document.body.classList.add('big');
+  try{ await document.documentElement.requestFullscreen?.(); }catch(e){}
+  try{ await screen.orientation?.lock?.('landscape'); }catch(e){}
+}
+async function exitBig(){
+  document.body.classList.remove('big');
+  try{ await document.exitFullscreen?.(); }catch(e){}
+  try{ screen.orientation?.unlock?.(); }catch(e){}
+}
+el('big').onclick=enterBig;
+el('exitbig').onclick=exitBig;
+document.addEventListener('fullscreenchange',()=>{
+  if(!document.fullscreenElement) document.body.classList.remove('big');
+});
+
+el('learn').onclick=e=>{
+  learnMode=!learnMode;
+  pickMode=false;
+  e.target.classList.toggle('on',learnMode);
+  e.target.textContent = learnMode ? '👆 Now tap the BAT in the view'
+                                   : '🎯 Tap to learn bat colour';
+};
+
+el('mirror').onclick=e=>{
+  mirrorOn=!mirrorOn;
+  e.target.classList.toggle('on',mirrorOn);
+  e.target.textContent='🖥 Mirror PC: '+(mirrorOn?'on':'off');
+};
+el('auto').onclick=e=>{
+  autoClip=!autoClip;
+  e.target.classList.toggle('on',autoClip);
+  e.target.textContent='🏏 Auto-clip: '+(autoClip?'on':'off');
+  if(!autoClip){ swinging=false; ring.length=0; el('swing').textContent=''; }
+};
+
+el('toggle').onclick=e=>{
+  const p=el('panel'), hid=p.classList.toggle('collapsed');
+  e.target.textContent = hid?'Tune ▴':'Hide ▾';
+};
+view.addEventListener('click',ev=>{
+  const r=view.getBoundingClientRect();
+  const pw=proc.width, ph=proc.height;
+  let fx=(ev.clientX-r.left)/r.width;
+  if(facing==='user') fx=1-fx;      // undo the mirror to hit real coordinates
+  const pt=[ fx*pw, (ev.clientY-r.top)/r.height*ph ];
+
+  if(learnMode){ learnColor(pt); return; }
+  if(!pickMode) return;
+  pickPt=pt;
+  pickMode=false;
+});
+
+// ---- auto-calibrate the colour range from a tap --------------------
+// Samples a patch of real pixels around the tap and derives an HSV window,
+// which is far more reliable than guessing slider values for an unknown
+// camera/lighting combination.
+let learnMode=false;
+function learnColor(pt){
+  const pw=proc.width, ph=proc.height;
+  const R=Math.max(3,Math.round(pw*0.035));
+  const x0=Math.max(0,Math.round(pt[0]-R)), y0=Math.max(0,Math.round(pt[1]-R));
+  const x1=Math.min(pw,Math.round(pt[0]+R)), y1=Math.min(ph,Math.round(pt[1]+R));
+  if(x1-x0<2||y1-y0<2) return;
+  const d=pctx.getImageData(x0,y0,x1-x0,y1-y0).data;
+  const H=[],S=[],V=[];
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b), df=mx-mn;
+    let h=0;
+    if(df!==0){
+      if(mx===r) h=43*(((g-b)/df)%6);
+      else if(mx===g) h=43*(((b-r)/df)+2);
+      else h=43*(((r-g)/df)+4);
+    }
+    if(h<0) h+=180;
+    H.push(h); S.push(mx===0?0:255*df/mx); V.push(mx);
+  }
+  const q=(a,p)=>{ a=a.slice().sort((x,y)=>x-y);
+                   return a[Math.max(0,Math.min(a.length-1,Math.floor(p*a.length)))]; };
+  // 10th–90th percentile of the patch, padded — robust to a few stray pixels
+  const hl=Math.max(0,q(H,.10)-14), hh=Math.min(179,q(H,.90)+14);
+  const sl=Math.max(0,q(S,.10)-55), sh=255;
+  const vl=Math.max(0,q(V,.10)-55), vh=255;
+  range={h:[hl,hh], s:[sl,sh], v:[vl,vh]};
+  const set=(id,v)=>{ el(id).value=Math.round(v); el(id+'v').textContent=Math.round(v); };
+  set('h0',hl); set('h1',hh); set('s0',sl); set('s1',sh); set('v0',vl); set('v1',vh);
+  learnMode=false;
+  el('learn').classList.remove('on');
+  el('learn').textContent='🎯 Tap to learn';
+  el('swing').textContent='learned H'+Math.round(hl)+'-'+Math.round(hh)+
+                          ' S'+Math.round(sl)+'+ V'+Math.round(vl)+'+';
+  setTimeout(()=>{el('swing').textContent='';},2600);
+}
+
+for(const [id,key,idx] of [['h0','h',0],['h1','h',1],['s0','s',0],['s1','s',1],['v0','v',0],['v1','v',1]]){
+  const inp=el(id);
+  inp.oninput=()=>{ range[key][idx]=+inp.value; el(id+'v').textContent=inp.value; };
+}
+
+markCam();
+
+// keep the screen awake while tracking
+if('wakeLock' in navigator){
+  const req=()=>navigator.wakeLock.request('screen').catch(()=>{});
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) req(); });
+  req();
+}
+
+loop();
+</script>
+</body>
+</html>

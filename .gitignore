@@ -1,0 +1,13 @@
+# secrets / TLS
+.key.pem
+.cert.pem
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# os
+.DS_Store
