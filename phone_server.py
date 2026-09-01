@@ -159,15 +159,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ".wasm": "application/wasm", ".task": "application/octet-stream",
     }
 
+    MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB payload limit
+
     def _vendor(self, name):
-        if "/" in name or ".." in name:      # no path traversal
+        safe_name = os.path.basename(name)
+        if safe_name != name or ".." in name or "/" in name:  # strict filename validation
             self._send("bad path", code=400)
             return
-        full = os.path.join(HERE, "web", "vendor", name)
+        full = os.path.join(HERE, "web", "vendor", safe_name)
         if not os.path.isfile(full):
             self._send("not found", code=404)
             return
-        ext = os.path.splitext(name)[1]
+        ext = os.path.splitext(safe_name)[1]
         ctype = self._MIME.get(ext, "application/octet-stream")
         size = os.path.getsize(full)
         try:
@@ -188,6 +191,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", 0))
         except (ValueError, TypeError):
             n = 0
+
+        if n > self.MAX_BODY_BYTES:
+            self._send('{"error":"payload too large"}', "application/json", 413)
+            return
+
         raw = self.rfile.read(n) if n > 0 else b""
 
         if path == "/stats":
@@ -253,6 +261,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
+            self.close_connection = True
             with _clients_lock:
                 if q in _clients:
                     _clients.remove(q)
