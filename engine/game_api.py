@@ -26,21 +26,22 @@ def build_frame_output(pose, bat, lighting, fps):
     bat_out = {"detected": False}
     if bat.get("detected"):
         swing = analysis.classify_swing(bat, None)
-        # sweet spot ~ 70% from grip toward tip
-        base = bat["base"]
-        tip = bat["tip"]
-        sweet = [int(base[0] + 0.7 * (tip[0] - base[0])),
-                 int(base[1] + 0.7 * (tip[1] - base[1]))]
+        base = bat.get("base")
+        tip = bat.get("tip")
+        sweet = None
+        if base and tip and len(base) >= 2 and len(tip) >= 2:
+            sweet = [int(base[0] + 0.7 * (tip[0] - base[0])),
+                     int(base[1] + 0.7 * (tip[1] - base[1]))]
         bat_out = {
             "detected": True,
-            "base": list(bat["base"]),
-            "tip": list(bat["tip"]),
+            "base": list(base) if base else None,
+            "tip": list(tip) if tip else None,
             "sweetSpot": sweet,
-            "angle": round(bat["angle"], 1),
-            "length_px": round(bat["length_px"], 1),
-            "speed": round(bat["speed"], 1),
-            "accel": round(bat["accel"], 1),
-            "peakSpeed": round(bat["peak_speed"], 1),
+            "angle": round(float(bat.get("angle", 0.0)), 1),
+            "length_px": round(float(bat.get("length_px", 0.0)), 1),
+            "speed": round(float(bat.get("speed", 0.0)), 1),
+            "accel": round(float(bat.get("accel", 0.0)), 1),
+            "peakSpeed": round(float(bat.get("peak_speed", 0.0)), 1),
             "swing": swing,
         }
 
