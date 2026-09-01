@@ -105,12 +105,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _send(self, body, ctype="text/html; charset=utf-8", code=200):
         if isinstance(body, str):
             body = body.encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _file(self, name, ctype):
         try:
@@ -166,19 +169,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ext = os.path.splitext(name)[1]
         ctype = self._MIME.get(ext, "application/octet-stream")
         size = os.path.getsize(full)
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "public, max-age=86400")
-        self.end_headers()
-        with open(full, "rb") as f:
-            while chunk := f.read(65536):
-                self.wfile.write(chunk)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            with open(full, "rb") as f:
+                while chunk := f.read(65536):
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_POST(self):
         path = self.path.split("?")[0]
-        n = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(n) if n else b""
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            n = 0
+        raw = self.rfile.read(n) if n > 0 else b""
 
         if path == "/stats":
             try:
