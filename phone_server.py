@@ -59,15 +59,16 @@ MAX_CLIPS = 12
 def _broadcast(obj):
     global _latest
     _latest = obj
-    dead = []
     with _clients_lock:
+        dead = []
         for q in _clients:
             try:
                 q.put_nowait(obj)
             except queue.Full:
                 dead.append(q)
         for q in dead:
-            _clients.remove(q)
+            if q in _clients:
+                _clients.remove(q)
 
 
 def local_ip():
