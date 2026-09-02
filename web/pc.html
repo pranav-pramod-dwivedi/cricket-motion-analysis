@@ -54,7 +54,7 @@
         <div class="k" style="margin-bottom:8px">Live view
           <span style="float:right;text-transform:none;letter-spacing:0"
                 id="mirrorHint">enable “Mirror PC” on the phone</span></div>
-        <img id="mirror" style="width:100%;border-radius:6px;display:none;background:#0b0f16">
+        <img id="mirror" alt="Live phone camera preview" style="width:100%;border-radius:6px;display:none;background:#0b0f16">
         <div id="mirrorOff" style="height:210px;display:flex;align-items:center;
              justify-content:center;color:#8b98a9;font-size:12px;
              background:#0b0f16;border-radius:6px">no live preview</div>
@@ -69,7 +69,7 @@
               id="clipHint">swing hard — clips arrive automatically</span></div>
       <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:14px">
         <div>
-          <img id="replay" style="width:100%;border-radius:6px;background:#0b0f16;
+          <img id="replay" alt="Bat swing replay view" style="width:100%;border-radius:6px;background:#0b0f16;
                display:block;min-height:230px;object-fit:contain">
           <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
             <button id="play" style="padding:7px 14px;border:0;border-radius:6px;
@@ -186,6 +186,7 @@ function refreshClips(){
 
 function loadClip(id){
   fetch('/clip/'+id).then(r=>r.json()).then(c=>{
+    if(!c || !Array.isArray(c.jpegs) || !c.jpegs.length) return;
     clip=c; frameIdx=0;
     $('scrub').max=Math.max(0,c.jpegs.length-1);
     $('scrub').value=0;
