@@ -213,6 +213,23 @@ function pause(){ clearInterval(playTimer); playing=false; $('play').textContent
 $('play').onclick=()=>playing?pause():play();
 $('scrub').oninput=e=>{ pause(); showFrame(+e.target.value); };
 
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.matches && e.target.matches('input:not([type="range"]), textarea, select')) return;
+  if (!clip) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    playing ? pause() : play();
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    pause();
+    showFrame(frameIdx - 1);
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    pause();
+    showFrame(frameIdx + 1);
+  }
+});
+
 refreshClips();
 setInterval(refreshClips, 4000);
 
