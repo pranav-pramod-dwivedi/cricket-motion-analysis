@@ -29,8 +29,11 @@ def classify_swing(bat, angle_hist):
     """
     if not bat.get("detected"):
         return "idle"
-    speed = bat.get("speed", 0)
-    angle = bat.get("angle", 0)
+    speed = float(bat.get("speed", 0))
+    raw_angle = float(bat.get("angle", 0))
+    angle = raw_angle if raw_angle >= 0 else (raw_angle + 360.0) % 360.0
+    if angle > 180.0:
+        angle = 360.0 - angle  # fold to upper hemisphere 0-180
     if speed < 120:
         return "defence"
     # angle: 90=vertical(up), 0=horizontal-right, 180=horizontal-left
