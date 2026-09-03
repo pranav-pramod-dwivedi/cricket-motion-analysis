@@ -3,7 +3,7 @@ Tests for engine.analysis_module — pure functions, no camera/MediaPipe needed.
 
 Covers the three public functions:
   - estimate_distance_m(pose)
-  - classify_swing(bat, angle_hist)
+  - classify_swing(bat)
   - shot_quality(bat, pose)
 
 Run with pytest:
@@ -69,47 +69,47 @@ def test_distance_scales_inversely_with_height():
 # --- classify_swing --------------------------------------------------------
 
 def test_swing_idle_when_not_detected():
-    assert classify_swing(_bat(detected=False), None) == "idle"
+    assert classify_swing(_bat(detected=False)) == "idle"
 
 
 def test_swing_defence_at_low_speed():
-    assert classify_swing(_bat(speed=80, angle=90), None) == "defence"
+    assert classify_swing(_bat(speed=80, angle=90)) == "defence"
 
 
 def test_swing_straight_drive_vertical():
-    assert classify_swing(_bat(speed=500, angle=90), None) == "straight_drive"
+    assert classify_swing(_bat(speed=500, angle=90)) == "straight_drive"
 
 
 def test_swing_cover_drive_diagonal():
-    assert classify_swing(_bat(speed=500, angle=45), None) == "cover_drive"
+    assert classify_swing(_bat(speed=500, angle=45)) == "cover_drive"
 
 
 def test_swing_on_drive_other_diagonal():
-    assert classify_swing(_bat(speed=500, angle=135), None) == "on_drive"
+    assert classify_swing(_bat(speed=500, angle=135)) == "on_drive"
 
 
 def test_swing_pull_fast_horizontal():
-    assert classify_swing(_bat(speed=600, angle=10), None) == "pull"
+    assert classify_swing(_bat(speed=600, angle=10)) == "pull"
 
 
 def test_swing_cut_slow_horizontal():
-    assert classify_swing(_bat(speed=200, angle=170), None) == "cut"
+    assert classify_swing(_bat(speed=200, angle=170)) == "cut"
 
 
 def test_swing_negative_angle_normalised():
     # arctan2 returns negative angles; -90 should normalise to 90 (vertical)
-    assert classify_swing(_bat(speed=500, angle=-90), None) == "straight_drive"
+    assert classify_swing(_bat(speed=500, angle=-90)) == "straight_drive"
 
 
 def test_swing_angle_above_180_folded():
     # 270 folds: (270+0) % 360 = 270, then 360-270 = 90
-    assert classify_swing(_bat(speed=500, angle=270), None) == "straight_drive"
+    assert classify_swing(_bat(speed=500, angle=270)) == "straight_drive"
 
 
 def test_swing_pull_vs_cut_threshold():
     # Same angle, different speed: >400 is pull, <=400 is cut
-    assert classify_swing(_bat(speed=401, angle=5), None) == "pull"
-    assert classify_swing(_bat(speed=400, angle=5), None) == "cut"
+    assert classify_swing(_bat(speed=401, angle=5)) == "pull"
+    assert classify_swing(_bat(speed=400, angle=5)) == "cut"
 
 
 def test_swing_angle_coverage_fast():
@@ -117,7 +117,7 @@ def test_swing_angle_coverage_fast():
     horizontal angles resolve to 'pull' (not 'cut', which needs low speed)."""
     shots = set()
     for angle in range(0, 181):
-        shots.add(classify_swing(_bat(speed=500, angle=angle), None))
+        shots.add(classify_swing(_bat(speed=500, angle=angle)))
     assert shots == {"straight_drive", "cover_drive", "on_drive", "pull"}
 
 
@@ -125,7 +125,7 @@ def test_swing_angle_coverage_moderate():
     """At moderate speed (120-400), horizontal angles resolve to 'cut'."""
     shots = set()
     for angle in range(0, 181):
-        shots.add(classify_swing(_bat(speed=200, angle=angle), None))
+        shots.add(classify_swing(_bat(speed=200, angle=angle)))
     assert shots == {"straight_drive", "cover_drive", "on_drive", "cut"}
 
 
