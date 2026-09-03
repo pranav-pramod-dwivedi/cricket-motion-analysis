@@ -22,7 +22,7 @@ def estimate_distance_m(pose):
     return round(_REF_DISTANCE_M * (_REF_HEIGHT_PX / hpx), 2)
 
 
-def classify_swing(bat, angle_hist):
+def classify_swing(bat):
     """
     Very rough shot classifier from bat angle + motion. This is a heuristic
     starter — it improves as you add labeled data later.
