@@ -12,7 +12,7 @@ Built as a modular foundation (Milestone 1) so later features bolt onto `engine/
 | Milestone | Date |
 |---|---|
 | Project started (first files) | **2026-07-18** |
-| Deskptop GUI (webcam skeleton + bat tracking) | 2026-07-18 → 07-19 |
+| Desktop GUI (webcam skeleton + bat tracking) | 2026-07-18 → 07-19 |
 | Discrete bat tracker (`engine/bat_module.py`) | 2026-07-19 |
 | Phone-as-camera / PC dashboard server (`phone_server.py`, `web/`) | 2026-07-19 |
 | Virtual-bat skeleton model (`web/virtualbat.js`) | 2026-07-19 |
@@ -119,7 +119,7 @@ Self-signed **HTTPS** on port `8443` (browsers refuse camera access on plain HTT
   `/clips` + `/clip/{id}` (saved swings), `/vendor/*` (local MediaPipe assets)
 
 ### `web/` — phone/dashboard front-end
-- `phone.html` — on-device getuMedia + HSV detection, posts stats, saves swing clips
+- `phone.html` — on-device getUserMedia + HSV detection, posts stats, saves swing clips
 - `virtualbat.js` — the **Virtual Bat model**: skeleton → hands → virtual bat, with
   color as a correction layer (inverted pipeline, robust when the bat blurs)
 - `pc.html` — dashboard over SSE; shows live stats, preview mirror and swing clips
