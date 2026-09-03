@@ -25,7 +25,7 @@ def build_frame_output(pose, bat, lighting, fps):
 
     bat_out = {"detected": False}
     if bat.get("detected"):
-        swing = analysis.classify_swing(bat, None)
+        swing = analysis.classify_swing(bat)
         base = bat.get("base")
         tip = bat.get("tip")
         sweet = None
