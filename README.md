@@ -64,7 +64,7 @@ Python 3, OpenCV (`cv2`), `numpy`, Pillow, `mediapipe`. Tkinter ships with Pytho
 macOS. The MediaPipe pose model lives in `models/` and is committed so it just runs.
 
 ```bash
-python3 -m pip install opencv-python numpy Pillow mediapipe
+python3 -m pip install -r requirements.txt
 python3 cricket_app.py
 ```
 
