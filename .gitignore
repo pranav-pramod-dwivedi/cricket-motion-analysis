@@ -1,6 +1,8 @@
 # secrets / TLS
 .key.pem
 .cert.pem
+.env
+.env.*
 
 # python
 __pycache__/
@@ -8,6 +10,26 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+build/
+dist/
+*.egg-info/
+
+# test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# video captures & screenshots (runtime output, not source)
+*.avi
+*.mp4
+*.mov
+*.mkv
+screenshots/
 
 # os
 .DS_Store
+Thumbs.db
+
+# editors
+.idea/
+.vscode/
