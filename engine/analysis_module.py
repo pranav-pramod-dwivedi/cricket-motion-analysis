@@ -53,7 +53,11 @@ def classify_swing(bat):
 
 def shot_quality(bat, pose):
     """Produce 0-100 sub-scores. Heuristic; tune weights over time."""
-    speed = bat.get("speed", 0)
+    # Coerce to float: in phone-camera mode the bat dict arrives from JSON
+    # posted over the network, where numeric fields may be strings. This
+    # mirrors the defensive coercion already used in classify_swing() and
+    # avoids a TypeError on the arithmetic below.
+    speed = float(bat.get("speed", 0))
     # Timing proxy: moderate, controlled speed scores best
     timing = int(np.clip(100 - abs(speed - 500) / 8, 40, 99))
     # Bat path proxy: straighter (less angle noise) is better — placeholder
