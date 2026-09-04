@@ -4,6 +4,10 @@ labeled distance estimate. These are approximations from a single webcam:
 distance is inferred from apparent body height and is NOT a true metric depth.
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 import numpy as np
 
 # Reference: an adult ~1.7 m tall filling ~60% of a 720p frame at ~2.5 m.
@@ -11,18 +15,22 @@ import numpy as np
 _REF_HEIGHT_PX = 430.0
 _REF_DISTANCE_M = 2.5
 
+# Below this apparent body height (px) the skeleton is too small / noisy to
+# give a usable distance estimate, so we bail out instead of returning noise.
+_MIN_HEIGHT_PX = 20
 
-def estimate_distance_m(pose):
+
+def estimate_distance_m(pose) -> Optional[float]:
     """Rough distance estimate (labeled as estimate). Returns meters or None."""
     if pose is None:
         return None
     hpx = pose.height_px()
-    if not hpx or hpx < 20:
+    if not hpx or hpx < _MIN_HEIGHT_PX:
         return None
     return round(_REF_DISTANCE_M * (_REF_HEIGHT_PX / hpx), 2)
 
 
-def classify_swing(bat):
+def classify_swing(bat: dict) -> str:
     """
     Very rough shot classifier from bat angle + motion. This is a heuristic
     starter — it improves as you add labeled data later.
@@ -51,7 +59,7 @@ def classify_swing(bat):
     return "cut"
 
 
-def shot_quality(bat, pose):
+def shot_quality(bat: dict, pose) -> dict:
     """Produce 0-100 sub-scores. Heuristic; tune weights over time."""
     # Coerce to float: in phone-camera mode the bat dict arrives from JSON
     # posted over the network, where numeric fields may be strings. This
