@@ -95,8 +95,8 @@ Every frame produces this (from `engine/game_api.py`):
   velocity-aware teleport gating · `_orient()` disambiguates tip/base from wrists
 
 ### `engine/analysis_module.py` — analysis
-- `classify_swing(bat, angle_hist)` — idle / defence / straight_drive / cover_drive /
-  on_drive / pull / cut / flick (heuristic)
+- `classify_swing(bat)` — idle / defence / straight_drive / cover_drive /
+  on_drive / pull / cut (heuristic)
 - `shot_quality(bat, pose)` — 0–100 timing / balance / footwork / bat_path
 - `estimate_distance_m(pose)` — labeled estimate from body height
 
@@ -139,12 +139,12 @@ cleanly without the background bleeding in. The defaults assume a plain blue bat
 
 ## Roadmap
 
-2. Calibration wizard (player height, bat length, saved profile)
-3. Environment detection ("move 40 cm back", floor plane)
-4. Richer swing recognition (trained per-shot)
-5. Motion prediction + Kalman smoothing
-6. Depth / stereo camera for true 3D hitbox
-7. Ghost comparison vs. pro references, ball detection, live coaching cues
+1. Calibration wizard (player height, bat length, saved profile)
+2. Environment detection ("move 40 cm back", floor plane)
+3. Richer swing recognition (trained per-shot)
+4. Motion prediction + Kalman smoothing
+5. Depth / stereo camera for true 3D hitbox
+6. Ghost comparison vs. pro references, ball detection, live coaching cues
 
 ## Security note
 
