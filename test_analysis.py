@@ -168,6 +168,17 @@ def test_quality_overall_is_mean_of_subscores():
     assert q["overall"] == expected
 
 
+def test_quality_string_speed_does_not_crash():
+    """In phone-camera mode the bat dict arrives from JSON posted over the
+    network, where numeric fields may be strings. shot_quality must coerce
+    them (as classify_swing already does) instead of raising TypeError."""
+    bat = {"detected": True, "speed": "500", "angle": "90"}
+    q = shot_quality(bat, None)
+    assert 0 <= q["timing"] <= 100
+    # must match the result for the numeric equivalent
+    assert q == shot_quality({"detected": True, "speed": 500, "angle": 90}, None)
+
+
 # --- standalone runner (no pytest required) --------------------------------
 
 if __name__ == "__main__":
