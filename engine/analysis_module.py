@@ -45,7 +45,10 @@ def classify_swing(bat):
         return "on_drive"
     if angle < 30 or angle > 150:
         return "pull" if speed > 400 else "cut"
-    return "flick"
+    # No angle in [0, 180] reaches here: the bands above (0-30, 30-60,
+    # 60-120, 120-150, 150-180) cover the entire folded range. Kept as a
+    # defensive fallback rather than an unreachable "flick" return.
+    return "cut"
 
 
 def shot_quality(bat, pose):
