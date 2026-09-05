@@ -19,6 +19,11 @@ _REF_DISTANCE_M = 2.5
 # give a usable distance estimate, so we bail out instead of returning noise.
 _MIN_HEIGHT_PX = 20
 
+# Beyond this distance (m) the estimate from a single webcam is too noisy to
+# be meaningful, so we cap it instead of surfacing absurd values (40+ m) when
+# the player is barely visible at the edge of the frame.
+_MAX_DISTANCE_M = 10.0
+
 
 def estimate_distance_m(pose) -> Optional[float]:
     """Rough distance estimate (labeled as estimate). Returns meters or None."""
@@ -27,7 +32,7 @@ def estimate_distance_m(pose) -> Optional[float]:
     hpx = pose.height_px()
     if not hpx or hpx < _MIN_HEIGHT_PX:
         return None
-    return round(_REF_DISTANCE_M * (_REF_HEIGHT_PX / hpx), 2)
+    return round(min(_REF_DISTANCE_M * (_REF_HEIGHT_PX / hpx), _MAX_DISTANCE_M), 2)
 
 
 def classify_swing(bat: dict) -> str:

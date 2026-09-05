@@ -66,6 +66,14 @@ def test_distance_scales_inversely_with_height():
     assert abs(far - 5.0) < 0.01
 
 
+def test_distance_capped_when_player_barely_visible():
+    # A skeleton just above the min height would produce an absurd estimate
+    # (43+ m); the cap keeps it to a sane ceiling instead of returning noise.
+    capped = estimate_distance_m(FakePose(height=25))
+    assert capped is not None
+    assert capped <= 10.0
+
+
 # --- classify_swing --------------------------------------------------------
 
 def test_swing_idle_when_not_detected():
