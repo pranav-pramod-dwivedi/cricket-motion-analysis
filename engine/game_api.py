@@ -42,6 +42,8 @@ def build_frame_output(pose, bat, lighting, fps):
             "speed": round(float(bat.get("speed", 0.0)), 1),
             "accel": round(float(bat.get("accel", 0.0)), 1),
             "peakSpeed": round(float(bat.get("peak_speed", 0.0)), 1),
+            "confidence": round(float(bat.get("confidence", 0.0)), 2),
+            "source": bat.get("source", "color"),
             "swing": swing,
         }
 
