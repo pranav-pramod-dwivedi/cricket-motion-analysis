@@ -166,6 +166,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     }
 
     MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB payload limit
+    # If a POST body exceeds the limit but is under this threshold we drain it
+    # so the keep-alive connection stays usable. Anything larger would make
+    # draining a DoS vector, so we close the connection instead.
+    MAX_DRAIN_BYTES = 2 * 1024 * 1024  # 2 MB
 
     def _vendor(self, name):
         safe_name = os.path.basename(name)
@@ -200,6 +204,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if n > self.MAX_BODY_BYTES:
             self._send('{"error":"payload too large"}', "application/json", 413)
+            # On a keep-alive HTTP/1.1 connection the unread body would sit in
+            # the socket buffer and corrupt the next request. If the body is
+            # small enough to drain cheaply we read+discard it; otherwise we
+            # close the connection so the stale bytes never get parsed.
+            if n <= self.MAX_DRAIN_BYTES:
+                try:
+                    self.rfile.read(n)
+                except Exception:
+                    self.close_connection = True
+            else:
+                self.close_connection = True
             return
 
         raw = self.rfile.read(n) if n > 0 else b""
