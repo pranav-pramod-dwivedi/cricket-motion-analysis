@@ -78,7 +78,7 @@ Every frame produces this (from `engine/game_api.py`):
 | Block | Contents |
 |---|---|
 | `player` | stance (handedness guess), orientation, joint pixel positions |
-| `bat` | detected flag, base/tip, sweet spot, angle, length_px, speed, accel, peakSpeed, swing |
+| `bat` | detected flag, base/tip, sweet spot, angle, length_px, speed, accel, peakSpeed, confidence, source, swing |
 | `quality` | timing, balance, footwork, bat_path, overall (0–100) |
 | `environment` | `distance_m_est` (estimate, not true depth), lighting, fps |
 
