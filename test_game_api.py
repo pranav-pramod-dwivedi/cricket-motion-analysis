@@ -49,12 +49,14 @@ class FakePose:
 
 
 def _bat(detected=True, base=(0, 0), tip=(100, 100), speed=300, angle=45,
-         accel=10, peak_speed=500, length_px=141.4):
+         accel=10, peak_speed=500, length_px=141.4,
+         confidence=0.82, source="color"):
     """Build the minimal bat dict build_frame_output reads."""
     return {
         "detected": detected, "base": base, "tip": tip,
         "angle": angle, "length_px": length_px, "speed": speed,
         "accel": accel, "peak_speed": peak_speed,
+        "confidence": confidence, "source": source,
     }
 
 
@@ -126,6 +128,18 @@ def test_bat_block_fields_when_detected():
     assert b["angle"] == 45.0
     assert b["swing"] == "cover_drive"   # angle 45, speed 300 -> cover_drive
     assert b["peakSpeed"] == 500.0
+    assert b["confidence"] == 0.82
+    assert b["source"] == "color"
+
+
+def test_bat_block_confidence_and_source_default_when_absent():
+    # A bat dict without confidence/source (e.g. an older phone-camera
+    # client posting stats) must still produce a valid, defaulted block.
+    bat = {"detected": True, "base": (0, 0), "tip": (100, 100),
+           "speed": 300, "angle": 45}
+    out = build_frame_output(None, bat, "good", 30.0)
+    assert out["bat"]["confidence"] == 0.0
+    assert out["bat"]["source"] == "color"
 
 
 def test_sweet_spot_is_70_percent_from_base_to_tip():
